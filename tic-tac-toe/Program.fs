@@ -3,55 +3,77 @@
 type AxisX = Left | MiddleX | Right
 type AxisY = Top | MiddleY | Bottom
 
-type Position = Position of AxisX * AxisY
-
 type Piece = X | O
+
+type Position = Position of AxisX * AxisY
 
 type Slot =
     | SlotEmpty of Position
     | SlotFull of Position * Piece
 
-type Line = Line of Slot * Slot * Slot
-
-type Board = Board of Line * Line * Line
+type Board = Board of Slot list
 
 type Turn = Turn of Piece
 
+module Turn =
+    let change (Turn piece) =
+        match piece with
+        | X -> Turn O
+        | O -> Turn X
+
 module Position =
-    let Create x y = Position (x, y)
+    let create x y = Position (x, y)
 
 module Piece =
-    let Draw piece =
+    let draw piece =
         match piece with
         | X -> "x"
         | O -> "o"
     
-    let DrawCursorOver piece =
+    let drawCursorOver piece =
         match piece with
         | X -> "X"
         | O -> "O"
 
 module Slot =
-    let CreateEmpty position = SlotEmpty position
+    let createEmpty x y = SlotEmpty (Position (x, y))
 
-    let Draw slot cursor =
+    let draw slot cursor =
         match slot, cursor with
         | (SlotEmpty slotPos, cursorPos) -> if slotPos = cursorPos then "#" else "-"
-        | (SlotFull (slotPos, piece), cursorPos) -> if slotPos = cursorPos then Piece.DrawCursorOver piece else Piece.Draw piece
-
-module Line =
-    let Create axisY = Line (Slot.CreateEmpty (Position.Create Left axisY), Slot.CreateEmpty (Position.Create MiddleX axisY), Slot.CreateEmpty (Position.Create Right axisY))
-
-    let Draw line cursor =
-        let (Line (s1, s2, s3)) = line
-        sprintf "%s|%s|%s" (Slot.Draw s1 cursor) (Slot.Draw s2 cursor) (Slot.Draw s3 cursor)
+        | (SlotFull (slotPos, piece), cursorPos) -> if slotPos = cursorPos then Piece.drawCursorOver piece else Piece.draw piece
 
 module Board =
-    let Create = Board (Line.Create Top, Line.Create MiddleY, Line.Create Bottom)
+    let create = Board [
+        Slot.createEmpty Left Top; Slot.createEmpty MiddleX Top; Slot.createEmpty Right Top;
+        Slot.createEmpty Left MiddleY; Slot.createEmpty MiddleX MiddleY; Slot.createEmpty Right MiddleY;
+        Slot.createEmpty Left Bottom; Slot.createEmpty MiddleX Bottom; Slot.createEmpty Right Bottom;
+    ]
 
-    let Draw board cursor =
-        let (Board (l1, l2, l3)) = board
-        sprintf "%s\n%s\n%s" (Line.Draw l1 cursor) (Line.Draw l2 cursor) (Line.Draw l3 cursor)
+    let draw (Board slots) cursor =
+        let drawLine line cursor =
+            match line with
+            | s1 :: s2 :: s3 :: _ -> sprintf "%s|%s|%s\n" (Slot.draw s1 cursor) (Slot.draw s2 cursor) (Slot.draw s3 cursor) 
+            | _ -> ""
+
+        slots
+        |> List.chunkBySize 3
+        |> List.fold (fun accL line -> accL + drawLine line cursor) ""
+
+    let isValidMove (Board slots) cursorPosition =
+        slots
+        |> List.exists (fun slot ->
+            match slot with
+            | SlotEmpty slotPos -> slotPos = cursorPosition
+            | _ -> false)
+
+    let putPieceAtSlot (Board slots) cursorPosition (Turn piece: Turn) =
+        slots
+        |> List.map (fun slot ->
+            match slot with
+            | SlotEmpty slotPosition -> if slotPosition = cursorPosition then SlotFull (slotPosition, piece) else slot
+            | _ -> slot)
+        |> Board
 
 type GameState = Running | EndMatch of Piece | Exit
 
@@ -101,13 +123,22 @@ let updateGame world msg =
     | (MoveRight, Position (x, y)) -> { world with Cursor = Position ((moveRight x), y) }
     | (MoveDown, Position (x, y)) -> { world with Cursor = Position (x, (moveDown y)) }
     | (MoveLeft, Position (x, y)) -> { world with Cursor = Position ((moveLeft x), y) }
+
+    | (Commit, cursorPos) ->
+        if Board.isValidMove world.Board cursorPos then
+            let newBoard = Board.putPieceAtSlot world.Board cursorPos world.Turn
+            { world with Board = newBoard; Turn = Turn.change world.Turn }
+        else
+            world
+
+    | (Quit, _) -> { world with State = Exit }
     | _ -> world
 
 let drawGame world =
     Console.Clear()
     let (Turn piece) = world.Turn
-    printfn "Turn of %s" (Piece.DrawCursorOver piece)
-    printf "%s" (Board.Draw world.Board world.Cursor)
+    printfn "Turn of %s" (Piece.drawCursorOver piece)
+    printf "%s" (Board.draw world.Board world.Cursor)
 
     let input = Console.ReadKey()
     match input.Key with
@@ -119,13 +150,13 @@ let drawGame world =
     | ConsoleKey.Escape -> Quit
     | _ -> EmptyMsg
 
-let rec game world update draw =
+let rec game world =
     match world.State with
-    | Running -> game (world |> draw |> (update world)) update draw
+    | Running -> game (world |> drawGame |> (updateGame world))
     | EndMatch w -> EmptyMsg
     | Exit -> EmptyMsg
 
 [<EntryPoint>]
 let main argv =
-    game { Board = Board.Create; Turn = Turn X; Cursor = Position.Create MiddleX MiddleY; State = Running } updateGame drawGame |> ignore
+    game { Board = Board.create; Turn = Turn X; Cursor = Position.create MiddleX MiddleY; State = Running } |> ignore
     0
