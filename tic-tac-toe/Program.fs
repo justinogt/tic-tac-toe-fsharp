@@ -38,10 +38,10 @@ module Piece =
 module Slot =
     let createEmpty x y = SlotEmpty (Position (x, y))
 
-    let draw slot cursor =
-        match slot, cursor with
-        | (SlotEmpty slotPos, cursorPos) -> if slotPos = cursorPos then "#" else "-"
-        | (SlotFull (slotPos, piece), cursorPos) -> if slotPos = cursorPos then Piece.drawCursorOver piece else Piece.draw piece
+    let draw slot cursorPosition =
+        match slot with
+        | SlotEmpty slotPos -> if slotPos = cursorPosition then "#" else "-"
+        | SlotFull (slotPos, piece) -> if slotPos = cursorPosition then Piece.drawCursorOver piece else Piece.draw piece
 
 module Board =
     let create = Board [
@@ -60,18 +60,18 @@ module Board =
         |> List.chunkBySize 3
         |> List.fold (fun accL line -> accL + drawLine line cursor) ""
 
-    let isValidMove (Board slots) cursorPosition =
+    let isValidMove (Board slots) position =
         slots
         |> List.exists (fun slot ->
             match slot with
-            | SlotEmpty slotPos -> slotPos = cursorPosition
+            | SlotEmpty slotPos -> slotPos = position
             | _ -> false)
 
-    let putPieceAtSlot (Board slots) cursorPosition (Turn piece: Turn) =
+    let putPieceAtSlot (Board slots) position (Turn piece: Turn) =
         slots
         |> List.map (fun slot ->
             match slot with
-            | SlotEmpty slotPosition -> if slotPosition = cursorPosition then SlotFull (slotPosition, piece) else slot
+            | SlotEmpty slotPosition -> if slotPosition = position then SlotFull (slotPosition, piece) else slot
             | _ -> slot)
         |> Board
 
