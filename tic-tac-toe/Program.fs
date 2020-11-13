@@ -75,6 +75,20 @@ module Board =
             | _ -> slot)
         |> Board
 
+    let hasPieceWonXorY (Board slots) piece (Position (xAxis, yAxis)) =
+        slots
+        |> List.filter (fun slot ->
+            match slot with
+            | SlotFull (Position (slotX, slotY), slotPiece) when slotPiece = piece -> slotX = xAxis || slotY = yAxis
+            | _ -> false)
+        |> List.length |> fun amount -> amount >= 3
+
+    let hasPieceWon board piece =
+        [Position.create Left Top; Position.create MiddleX MiddleY; Position.create Right Bottom]
+        |> List.map (fun axis -> hasPieceWonXorY board piece axis)
+        |> List.fold (||) false
+
+
 type GameState = Running | EndMatch of Piece | Exit
 
 type GameWorld = {
@@ -84,14 +98,17 @@ type GameWorld = {
     State: GameState
 }
 
-type GameMsg =
-    | MoveUp
-    | MoveRight
-    | MoveDown
-    | MoveLeft
-    | Commit
-    | Quit
-    | EmptyMsg
+let newGame = { Board = Board.create; Turn = Turn X; Cursor = Position.create MiddleX MiddleY; State = Running }
+
+type GameAction =
+    | ActionUp
+    | ActionRight
+    | ActionDown
+    | ActionLeft
+    | ActionCommit
+    | ActionQuit
+    | ActionRestart
+    | ActionEmpty
 
 let moveUp yPos =
     match yPos with
@@ -119,20 +136,21 @@ let moveLeft xPos =
 
 let updateGame world msg =
     match msg, world.Cursor with
-    | (MoveUp, Position (x, y)) -> { world with Cursor = Position (x, (moveUp y)) }
-    | (MoveRight, Position (x, y)) -> { world with Cursor = Position ((moveRight x), y) }
-    | (MoveDown, Position (x, y)) -> { world with Cursor = Position (x, (moveDown y)) }
-    | (MoveLeft, Position (x, y)) -> { world with Cursor = Position ((moveLeft x), y) }
+    | (ActionUp, Position (x, y)) -> { world with Cursor = Position (x, (moveUp y)) }
+    | (ActionRight, Position (x, y)) -> { world with Cursor = Position ((moveRight x), y) }
+    | (ActionDown, Position (x, y)) -> { world with Cursor = Position (x, (moveDown y)) }
+    | (ActionLeft, Position (x, y)) -> { world with Cursor = Position ((moveLeft x), y) }
 
-    | (Commit, cursorPos) ->
+    | (ActionCommit, cursorPos) ->
         if Board.isValidMove world.Board cursorPos then
             let newBoard = Board.putPieceAtSlot world.Board cursorPos world.Turn
             { world with Board = newBoard; Turn = Turn.change world.Turn }
         else
             world
 
-    | (Quit, _) -> { world with State = Exit }
-    | _ -> world
+    | (ActionQuit, _) -> { world with State = Exit }
+    | (ActionRestart, _) -> newGame
+    | (ActionEmpty, _) -> world
 
 let drawGame world =
     Console.Clear()
@@ -140,23 +158,26 @@ let drawGame world =
     printfn "Turn of %s" (Piece.drawCursorOver piece)
     printf "%s" (Board.draw world.Board world.Cursor)
 
+    printf "Has any player won: %b" (Board.hasPieceWon world.Board O)
+
     let input = Console.ReadKey()
     match input.Key with
-    | ConsoleKey.UpArrow -> MoveUp
-    | ConsoleKey.RightArrow -> MoveRight
-    | ConsoleKey.DownArrow -> MoveDown
-    | ConsoleKey.LeftArrow -> MoveLeft
-    | ConsoleKey.Enter -> Commit
-    | ConsoleKey.Escape -> Quit
-    | _ -> EmptyMsg
+    | ConsoleKey.UpArrow -> ActionUp
+    | ConsoleKey.RightArrow -> ActionRight
+    | ConsoleKey.DownArrow -> ActionDown
+    | ConsoleKey.LeftArrow -> ActionLeft
+    | ConsoleKey.Enter -> ActionCommit
+    | ConsoleKey.Escape -> ActionQuit
+    | ConsoleKey.R -> ActionRestart
+    | _ -> ActionEmpty
 
 let rec game world =
     match world.State with
     | Running -> game (world |> drawGame |> (updateGame world))
-    | EndMatch w -> EmptyMsg
-    | Exit -> EmptyMsg
+    | EndMatch w -> ActionEmpty
+    | Exit -> ActionEmpty
 
 [<EntryPoint>]
 let main argv =
-    game { Board = Board.create; Turn = Turn X; Cursor = Position.create MiddleX MiddleY; State = Running } |> ignore
+    game newGame |> ignore
     0
