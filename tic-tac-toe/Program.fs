@@ -75,21 +75,51 @@ module Board =
             | _ -> slot)
         |> Board
 
-    let hasPieceWonAtAxis (Board slots) piece axisFilter =
+    let getSlotsFullAtLine (Board slots) line =
         slots
         |> List.filter (fun slot ->
             match slot with
-            | SlotFull (slotPosition, slotPiece) when slotPiece = piece -> axisFilter slotPosition
+            | SlotFull (slotPosition, _) -> line |> List.exists (fun position -> slotPosition = position)
             | _ -> false)
-        |> List.length |> fun amount -> amount >= 3
 
-    let hasPieceWonX board piece xAxis = hasPieceWonAtAxis board piece (fun (Position (slotX, _)) -> slotX = xAxis)
-    let hasPieceWonY board piece yAxis = hasPieceWonAtAxis board piece (fun (Position (_, slotY)) -> slotY = yAxis) 
+    let getSlotsFullAtAxis (Board slots) axisFilter =
+        slots
+        |> List.filter (fun slot ->
+            match slot with
+            | SlotFull (position, _) -> axisFilter position
+            | SlotEmpty _ -> false)
+    
+    let getSlotsFullAtXAxis board =
+        [Left; MiddleX; Right]
+        |> List.map (fun xAxis -> getSlotsFullAtAxis board (fun (Position (slotX, _)) -> slotX = xAxis))
+    let getSlotsFullAtYAxis board =
+        [Top; MiddleY; Bottom]
+        |> List.map (fun yAxis -> getSlotsFullAtAxis board (fun (Position (_, slotY)) -> slotY = yAxis))
+
+    let hasPieceWonAtLine piece slotLine =
+        slotLine
+        |> List.filter (fun slot ->
+            match slot with
+            | SlotFull (_, slotPiece) -> slotPiece = piece
+            | SlotEmpty _ -> false)
+        |> List.length
+        |> (fun amount -> amount = 3)
+
+    let hasPieceWonAtAxis board piece =
+        let wonXAxis = getSlotsFullAtXAxis board |> List.map (hasPieceWonAtLine piece) |> List.fold (||) false
+        let wonYAxis = getSlotsFullAtYAxis board |> List.map (hasPieceWonAtLine piece) |> List.fold (||) false
+        wonXAxis || wonYAxis
+
+    let hasPieceWonAtDiagonals board piece =
+        [
+            [Position.create Left Top; Position.create MiddleX MiddleY; Position.create Right Bottom];
+            [Position.create Right Top; Position.create MiddleX MiddleY; Position.create Left Bottom]
+        ]
+        |> List.map (getSlotsFullAtLine board >> hasPieceWonAtLine piece)
+        |> List.fold (||) false
 
     let hasPieceWon board piece =
-        let wonX = [Left; MiddleX; Right] |> List.map (hasPieceWonX board piece) |> List.exists id
-        let wonY = [Top; MiddleY; Bottom] |> List.map (hasPieceWonY board piece) |> List.exists id
-        wonX || wonY
+        (hasPieceWonAtAxis board piece) || (hasPieceWonAtDiagonals board piece)
 
     let isFull (Board slots) =
         slots
