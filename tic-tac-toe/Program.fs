@@ -75,21 +75,31 @@ module Board =
             | _ -> slot)
         |> Board
 
-    let hasPieceWonXorY (Board slots) piece (Position (xAxis, yAxis)) =
+    let hasPieceWonAtAxis (Board slots) piece axisFilter =
         slots
         |> List.filter (fun slot ->
             match slot with
-            | SlotFull (Position (slotX, slotY), slotPiece) when slotPiece = piece -> slotX = xAxis || slotY = yAxis
+            | SlotFull (slotPosition, slotPiece) when slotPiece = piece -> axisFilter slotPosition
             | _ -> false)
         |> List.length |> fun amount -> amount >= 3
 
+    let hasPieceWonX board piece xAxis = hasPieceWonAtAxis board piece (fun (Position (slotX, _)) -> slotX = xAxis)
+    let hasPieceWonY board piece yAxis = hasPieceWonAtAxis board piece (fun (Position (_, slotY)) -> slotY = yAxis) 
+
     let hasPieceWon board piece =
-        [Position.create Left Top; Position.create MiddleX MiddleY; Position.create Right Bottom]
-        |> List.map (fun axis -> hasPieceWonXorY board piece axis)
-        |> List.fold (||) false
+        let wonX = [Left; MiddleX; Right] |> List.map (hasPieceWonX board piece) |> List.exists id
+        let wonY = [Top; MiddleY; Bottom] |> List.map (hasPieceWonY board piece) |> List.exists id
+        wonX || wonY
 
+    let isFull (Board slots) =
+        slots
+        |> List.filter (fun slot ->
+            match slot with
+            | SlotFull _ -> false
+            | SlotEmpty _ -> true)
+        |> List.length |> fun amount -> amount = 0
 
-type GameState = Running | EndMatch of Piece | Exit
+type GameState = Running | Quit
 
 type GameWorld = {
     Board: Board
@@ -148,7 +158,7 @@ let updateGame world msg =
         else
             world
 
-    | (ActionQuit, _) -> { world with State = Exit }
+    | (ActionQuit, _) -> { world with State = Quit }
     | (ActionRestart, _) -> newGame
     | (ActionEmpty, _) -> world
 
@@ -158,7 +168,12 @@ let drawGame world =
     printfn "Turn of %s" (Piece.drawCursorOver piece)
     printf "%s" (Board.draw world.Board world.Cursor)
 
-    printf "Has any player won: %b" (Board.hasPieceWon world.Board O)
+    if Board.hasPieceWon world.Board X then
+        printf "Player X has won the game! Press R to restart";
+    elif Board.hasPieceWon world.Board O then
+        printf "Player O has won the game! Press R to restart"
+    elif Board.isFull world.Board then
+        printf "The game has tied! Press R to restart";
 
     let input = Console.ReadKey()
     match input.Key with
@@ -174,8 +189,7 @@ let drawGame world =
 let rec game world =
     match world.State with
     | Running -> game (world |> drawGame |> (updateGame world))
-    | EndMatch w -> ActionEmpty
-    | Exit -> ActionEmpty
+    | Quit -> ActionEmpty
 
 [<EntryPoint>]
 let main argv =
